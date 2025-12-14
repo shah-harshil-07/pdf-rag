@@ -103,4 +103,4 @@ npm run dev
 📽️ Demo
 
 📌 Upload a PDF → Ask questions → Get precise answers
-(See attached demo video in the repository)
+https://www.linkedin.com/feed/update/urn:li:ugcPost:7405906365300469760/
