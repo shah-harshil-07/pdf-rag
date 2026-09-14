@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { ClerkProvider, SignedIn, SignedOut, SignUp } from "@clerk/nextjs";
+// import { ClerkProvider, SignedIn, SignedOut, SignUp } from "@clerk/nextjs";
+import { ClerkProvider, SignUp } from "@clerk/nextjs";
 
 import "./globals.css";
 
@@ -30,13 +31,14 @@ export default function RootLayout({
         <body
           className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         >
-          <SignedOut>
-            <section className="h-screen w-screen flex items-center justify-center">
-              <SignUp />
-            </section>
-          </SignedOut>
+          {/* <SignedOut> */}
+          {/* <section className="h-screen w-screen flex items-center justify-center">
+            <SignUp />
+          </section> */}
+          {/* </SignedOut> */}
 
-          <SignedIn>{children}</SignedIn>
+          {/* <SignedIn>{children}</SignedIn> */}
+          <div>{children}</div>
         </body>
       </html>
     </ClerkProvider>

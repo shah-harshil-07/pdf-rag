@@ -19,5 +19,5 @@ export const vectorStore = await QdrantVectorStore.fromExistingCollection(
   {
     collectionName: "pdf-docs",
     url: `http://localhost:${qdrantPort}`,
-  }
+  },
 );

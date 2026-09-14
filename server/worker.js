@@ -1,23 +1,30 @@
-import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
+import fs from "fs";
+import { getDocumentProxy, extractText } from "unpdf";
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 
-import { Worker } from "bullmq";
 import { vectorStore } from "./ai.config.js";
 
-export const worker = new Worker(
-  "file-queue",
-  async (job) => {
-    const fileData = JSON.parse(job.data);
-    const { path } = fileData;
+export async function chunkAndAddToVectorDB(job) {
+  const fileData = JSON.parse(job.data);
+  const { path: filePath } = fileData;
 
-    // Load the pdf file. Chunks the file into individual pages. The `docs` array will be an array of pages of the uploaded document.
-    const loader = new PDFLoader(path);
-    const docs = await loader.load();
+  try {
+    // Load the pdf file. Chunks the file into individual pages.
+    const fileBuffer = fs.readFileSync(filePath);
+    const pdf = await getDocumentProxy(new Uint8Array(fileBuffer));
+
+    const { text: pages } = await extractText(pdf);
+    const splitter = new RecursiveCharacterTextSplitter({
+      chunkSize: 1000,
+      chunkOverlap: 200,
+    });
+
+    const fileChunks = await splitter.createDocuments(pages);
 
     // Put the pdf in Vector DB
-    await vectorStore.addDocuments(docs);
-  },
-  {
-    concurrency: 100,
-    connection: { host: "localhost", port: process.env.REDIS_PORT },
+    await vectorStore.addDocuments(fileChunks); 
+  } catch (error) {
+    console.error("Error in uploading chunks: ", error);
   }
-);
+}
+

@@ -1,17 +1,33 @@
 import cors from "cors";
 import multer from "multer";
 import express from "express";
-import { Queue } from "bullmq";
+import { createClient } from 'redis';
 import { configDotenv } from "dotenv";
+import { Queue, Worker, createNodeRedisClient  } from "bullmq";
 
+import { chunkAndAddToVectorDB } from "./worker.js";
 import { vectorStore, openAiClient } from "./ai.config.js";
 
 configDotenv();
 const port = process.env.PORT;
 const redisPort = process.env.REDIS_PORT;
 
-const fileQueue = new Queue("file-queue", {
-  connection: { host: "localhost", port: redisPort },
+const rawClient = createClient({ url: `redis://localhost:${redisPort}` });
+const redisClient = createNodeRedisClient(rawClient);
+
+const fileQueue = new Queue("file-queue", { connection: redisClient });
+const fileWorker = new Worker(
+  "file-queue",
+  chunkAndAddToVectorDB,
+  { connection: redisClient }
+);
+
+fileWorker.on('completed', job => {
+  console.log(`${job.id} has completed!`);
+});
+
+fileWorker.on('failed', (job, err) => {
+  console.log(`${job.id} has failed with ${err.message}`);
 });
 
 const storage = multer.diskStorage({
@@ -52,7 +68,7 @@ app.get('/chat', async (req, res) => {
   const SYSTEM_PROMPT = `You are a helpful AI assistant who answers the user query based on available context from the PDF file. Context: ${JSON.stringify(result)}`;
 
   const chatResult = await openAiClient.chat.completions.create({
-    model: "chatgpt-4o-latest",
+    model: "gpt-4",
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userQuery },
