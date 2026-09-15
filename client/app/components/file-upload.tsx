@@ -28,7 +28,7 @@ const FileUploadComponent: React.FC = () => {
   };
 
   return (
-    <div className="bg-slate-900 text-white shadow-2xl flex justify-center items-center p-4 rounded">
+    <div className="bg-slate-900 cursor-pointer text-white shadow-2xl flex justify-center items-center p-4 rounded">
       <div
         onClick={handleFileUpload}
         className={"flex flex-col justify-center items-center"}

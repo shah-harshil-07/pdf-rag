@@ -16,6 +16,7 @@
     "@langchain/qdrant": "^1.0",
     "@langchain/textsplitters": "^1.0.1",
     "bullmq": "^6.3",
+    "cohere-ai": "^8.1.0",
     "cors": "^2.8",
     "dotenv": "^17.4",
     "express": "5.2",

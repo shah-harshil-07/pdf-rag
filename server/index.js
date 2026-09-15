@@ -3,10 +3,12 @@ import multer from "multer";
 import express from "express";
 import { createClient } from 'redis';
 import { configDotenv } from "dotenv";
+import { CohereClientV2 } from "cohere-ai";
 import { Queue, Worker, createNodeRedisClient  } from "bullmq";
 
 import { chunkAndAddToVectorDB } from "./worker.js";
 import { vectorStore, openAiClient } from "./ai.config.js";
+import { readHistory, saveChatMessage } from "./conversationHistory.js";
 
 configDotenv();
 const port = process.env.PORT;
@@ -19,15 +21,15 @@ const fileQueue = new Queue("file-queue", { connection: redisClient });
 const fileWorker = new Worker(
   "file-queue",
   chunkAndAddToVectorDB,
-  { connection: redisClient }
+  { connection: redisClient },
 );
 
 fileWorker.on('completed', job => {
-  console.log(`${job.id} has completed!`);
+  console.log(`Job: ${job.id} has completed!`);
 });
 
 fileWorker.on('failed', (job, err) => {
-  console.log(`${job.id} has failed with ${err.message}`);
+  console.log(`Job: ${job.id} has failed with ${err.message}`);
 });
 
 const storage = multer.diskStorage({
@@ -40,13 +42,19 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+const multerInstance = multer({ storage });
+
+const cohereClient = new CohereClientV2({
+  token: process.env.COHERE_API_KEY,
+});
 
 const app = express();
 
 app.use(cors());
 
-app.post("/upload", upload.single("pdf"), async (req, res) => {
+const STATIC_SYSTEM_PROMPT = `You are a helpful AI assistant who answers the user query based on available context from the PDF file.`;
+
+app.post("/upload", multerInstance.single("pdf"), async (req, res) => {
   await fileQueue.add(
     "file-ready",
     JSON.stringify({
@@ -62,20 +70,40 @@ app.post("/upload", upload.single("pdf"), async (req, res) => {
 app.get('/chat', async (req, res) => {
   const userQuery = req.query.message;
 
-  const retriever = vectorStore.asRetriever({ k: 2 });
-  const result = await retriever.invoke(userQuery);
+  const queriedDocs = await vectorStore.similaritySearch(userQuery, 20);
 
-  const SYSTEM_PROMPT = `You are a helpful AI assistant who answers the user query based on available context from the PDF file. Context: ${JSON.stringify(result)}`;
+  const queriedPages = [];
+  for (const doc of queriedDocs) queriedPages.push(doc.pageContent ?? '');
+
+  const rerankedDocs = await cohereClient.rerank({
+    topN: 3,
+    query: userQuery,
+    documents: queriedPages,
+    model: "rerank-v4.0-pro",
+  });
+
+  const systemPrompt = `${STATIC_SYSTEM_PROMPT}
+    \nContext: ${JSON.stringify(queriedDocs)}
+    \nReranking results: ${JSON.stringify(rerankedDocs.results)}
+  `;
+
+  const conversationHistory = await readHistory();
 
   const chatResult = await openAiClient.chat.completions.create({
     model: "gpt-4",
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
+      ...conversationHistory,
       { role: 'user', content: userQuery },
-    ]
+    ],
   });
 
-  return res.json({ docs: result, message: chatResult.choices[0].message.content });
+  const botResponseText = chatResult?.choices?.[0]?.message?.content ?? "";
+
+  await saveChatMessage({ role: 'user', content: userQuery });
+  await saveChatMessage({ role: 'assistant', content: botResponseText });
+
+  return res.json({ docs: rerankedDocs, message: botResponseText });
 });
 
 app.listen(port, () => {
